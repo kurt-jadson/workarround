@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <drivername value="com.mysql.jdbc.Driver" />
+    <driverclasspath value="/home/kurt/.vim/mysql.jar" />
+	<connectionstring value="jdbc:mysql://localhost/oraculo_game" />
+	<username value="root" />
+	<password value="123456" />
+</configuration>
