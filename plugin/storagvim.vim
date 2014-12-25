@@ -16,20 +16,20 @@ if !exists('g:storagvim_escape')
 	let g:storagvim_escape = 0
 endif
 
-if !exists('g:table')
-	:echo 'Remember to configure g:table to use storagvim:updateWithGlobalInformation'
+if !exists('g:storagvim_max_command_buffer')
+	let g:storagvim_max_command_buffer = 5000
 endif
 
-if !exists('g:column')
-	:echo 'Remember to configure g:column to use storagvim:updateWithGlobalInformation'
-endif
+function! storagvim:executeWithGlobalInformation()
+	let text = join(storagvim:getText(getpos("'<"), getpos("'>")), g:storagvim_crlf)
 
-if !exists('g:where')
-	:echo 'Remember to configure g:where to use storagvim:updateWithGlobalInformation'
-endif
+	if text[0:5] ==? 'select' || text[0:5] ==? 'insert' || text[0:5] ==? 'update'
+		silent call storagvim:executeQuery(text)
+	else
+		call storagvim:requireInformation()
+		silent call storagvim:updateColumn(g:table, g:column, g:where)	
+	endif
 
-function! storagvim:updateWithGlobalInformation()
-	:call storagvim:updateColumn(g:table, g:column, g:where)	
 endfunction
 
 function! storagvim:updateColumn(table, column, where)
@@ -38,7 +38,24 @@ function! storagvim:updateColumn(table, column, where)
 		let text = substitute(text, "'", "''", "g") 
 	endif
 
-	:call storagvim:executeQuery("UPDATE " . a:table . " SET " . a:column . " = '". join(text, g:storagvim_crlf) . "' WHERE " . a:where)
+	let joined = join(text, g:storagvim_crlf)
+	let mb = g:storagvim_max_command_buffer
+	let parts = strlen(joined) / mb
+
+	if parts == 0
+		call storagvim:executeQuery("UPDATE " . g:table . " SET " . g:column . " = '". joined . "' WHERE " . g:where)
+	else
+		call storagvim:executeQuery("UPDATE " . g:table . " SET " . g:column . " = '". strpart(joined, 0, mb) . "' WHERE " . g:where)
+		let i = 1
+		while i < parts + 1
+			let start = mb*i
+			call storagvim:executeQuery("UPDATE " . g:table . " SET " 
+\				. g:column . " = CONCAT(" . g:column . ", '". strpart(joined, start, mb) 
+\				. "') WHERE " . g:where)
+			let i += 1
+		endwhile
+	endif
+
 endfunction
 
 function! storagvim:getText(s, e)
@@ -49,30 +66,64 @@ function! storagvim:getText(s, e)
 endfunction
 
 function! storagvim:executeQuery(query)
-	:silent execute '!java -jar ' . $VIMHOME . '/sgvim.jar "' . a:query . '"'
+	let q = escape(a:query, '"!#')
+	:execute '!java -jar ' . $VIMHOME . '/sgvim.jar "' . q . '"'
 endfunction
 
 function! storagvim:selectFromGlobalTable()
+	call storagvim:requireInformation()
 	:call storagvim:executeQuery('SELECT * FROM ' . g:table)
 endfunction
 
 function! storagvim:saveAndUpdate()
+	call storagvim:requireInformation()
 	let lastLine = line('$')
-	setpos('.', [0, lastLine, 1, 0])
-	let lastCol = getpos('.')
+	call setpos('.', [0, lastLine, 1, 0])
+	let lastCol = col('$')
 	let text = storagvim:getText([0, 1, 1, 0], [0, lastLine, lastCol, 0])
 
 	if(g:storagvim_escape == 1)
 		let text = substitute(text, "'", "''", "g") 
 	endif
-	call storagvim:executeQuery("UPDATE " . g:table . " SET " . g:column . " = '". join(text, g:storagvim_crlf) . "' WHERE " . g:where)
+
+	let joined = join(text, g:storagvim_crlf)
+	let mb = g:storagvim_max_command_buffer
+	let parts = strlen(joined) / mb
+
+	if parts == 0
+		call storagvim:executeQuery("UPDATE " . g:table . " SET " . g:column . " = '". joined . "' WHERE " . g:where)
+	else
+		call storagvim:executeQuery("UPDATE " . g:table . " SET " . g:column . " = '". strpart(joined, 0, mb) . "' WHERE " . g:where)
+		let i = 1
+		while i < parts + 1
+			let start = mb*i
+			call storagvim:executeQuery("UPDATE " . g:table . " SET " 
+\				. g:column . " = CONCAT(" . g:column . ", '". strpart(joined, start, mb) 
+\				. "') WHERE " . g:where)
+			let i += 1
+		endwhile
+	endif
 
 	write
 	echo 'saved'
 endfunction
 
+function! storagvim:requireInformation()
+	if !exists('g:table')
+		let g:table = input('Table: ')
+	endif
+
+	if !exists('g:column')
+		let g:column = input('Column: ')
+	endif
+
+	if !exists('g:where')
+		let g:where = input('Where: ')
+	endif
+endfunction
+
 if g:storagvim_map_keys == 1
 	nnoremap <F5> :call storagvim:selectFromGlobalTable()<CR>
-	vnoremap <F5> :call storagvim:updateWithGlobalInformation()<CR>
+	vnoremap <F5> :call storagvim:executeWithGlobalInformation()<CR>
 	cnoremap _w call storagvim:saveAndUpdate()
 endif
